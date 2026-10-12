@@ -1,0 +1,18 @@
+# 放到路由器的 /etc/config/campus_network，改完执行：service campus-watchdog restart
+# 注意：密码是明文保存的，只有能登录路由器的人看得到。
+
+config login 'settings'
+	option enabled '1'
+	option username '你的校园网账号'
+	option password '你的校园网密码'
+
+	# 以下三项都可以不写。
+
+	# 门户（认证服务器）地址。不写则使用跳转页里给出的地址。
+	# option portal_server '192.0.2.1'
+
+	# 夜间断网时要关掉的 5G 射频名。不写则自动从 /etc/config/wireless 里找。
+	# option radio_5g 'radio1'
+
+	# 写 0 表示夜间断网时不关 Wi-Fi，只休眠。
+	# option night_wifi_off '0'

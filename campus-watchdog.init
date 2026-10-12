@@ -1,0 +1,48 @@
+#!/bin/sh /etc/rc.common
+# 校园网自动认证看门狗的服务脚本（由 procd 托管）
+#
+# 常用命令：
+#   service campus-watchdog start | stop | restart
+#   logread -e campus-watchdog          看日志
+#
+# 账号、密码、总开关都在 /etc/config/campus_network，改完需要 restart 才生效。
+
+USE_PROCD=1
+START=99
+STOP=10
+
+PROG=/usr/bin/campus-watchdog.uc
+DORMANT_FLAG=/tmp/wifi5g_dormant
+
+start_service() {
+    # 总开关没开，或者账号密码没填，就不启动
+    [ "$(uci -q get campus_network.settings.enabled)" = "1" ] || return 0
+    [ -n "$(uci -q get campus_network.settings.username)" ] || return 0
+    [ -n "$(uci -q get campus_network.settings.password)" ] || return 0
+
+    procd_open_instance
+    procd_set_param command "$PROG"
+
+    # 进程意外退出后自动拉起：三个数依次是 阈值秒数、重启前等待秒数、最多重试次数。
+    # 重试次数填 0 表示不限，看门狗不应该因为连续崩溃几次就永久停工；
+    # 等待填 60 秒，这样即使陷入反复崩溃，也不会高频请求认证服务器。
+    procd_set_param respawn 3600 60 0
+
+    # 调高优先级（nice 值越小越优先，普通进程是 0）。看门狗平时几乎不占 CPU，
+    # 调高只是保证路由器满载时它一醒来就能排到前面；ping、wget 这些子进程会继承。
+    # 实测 4 核全满时，起一次 ping 的最差耗时从 27 ms 降到 18 ms。
+    procd_set_param nice -10
+
+    # 这里故意不写 stdout/stderr：脚本自己通过 syslog 写日志；
+    # 不接管的话 procd 会把输出接到 /dev/null，ping 子进程的输出就不用另做重定向。
+    procd_close_instance
+}
+
+stop_service() {
+    # 看门狗可能正处于“夜间已关 5G”的状态。标记文件里记着被关掉的射频名，
+    # 停服务时把它恢复，免得一直关着。
+    [ -f "$DORMANT_FLAG" ] || return 0
+    radio="$(head -n 1 "$DORMANT_FLAG")"
+    [ -n "$radio" ] && ubus call network.wireless up "{\"device\":\"$radio\"}" >/dev/null 2>&1
+    rm -f "$DORMANT_FLAG"
+}
